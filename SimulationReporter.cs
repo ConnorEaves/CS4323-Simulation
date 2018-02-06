@@ -1,97 +1,132 @@
-﻿using System;						// Console
-using System.Collections.Generic;	// List<T>
+﻿using System;                        // Console
+using System.Collections.Generic;    // List<T>
 
-namespace OSPA1 {
-	
-	/* **** SystemReporter ****************************************************************************************** *
-	 *	Description:
-	 *		Calculates and displays various statistics about the simulation	
-	 * ************************************************************************************************************** */
-	public class SimulationReporter {
-		
-		public List<Job> CompletedJobs;
-		public int RejectedJobs;
+namespace OSPA2 {
+    
+/* **** SystemReporter ********************************************** *
+ *  Description:
+ *      Calculates and displays various statistics about the simulation
+ * ***************************************************************** */
+    public class SimulationReporter {
+        
+        public List<Job> CompletedJobs;
 
-		private readonly int _startTime;
-		private readonly int _endTime;
-		
-		/* **** SystemReporter Constructor ************************************************************************** *
-		 *	Description:
-		 *		Builds the reporter
-		 * ********************************************************************************************************** */
-		public SimulationReporter (int startTime, int endTime) {
-			_startTime = startTime;
-			_endTime = endTime;
-			
-			CompletedJobs = new List<Job> ();
-		}
+        private readonly int _startTime;
+        private readonly int _endTime;
 
-		/* **** Report ********************************************************************************************** *
-		 *	Description:
-		 *		Prints relevant statistics to standard output
-		 * ********************************************************************************************************** */
-		public void Report (int time, Memory memory) {
-			
-			// Out of bounds check
-			if (time < _startTime || time > _endTime) {
-				return;
-			}
+        private float _averageUtilization;
+        private float _averageFragmentation;
+        private float _averageHoleSize;
+        
+/* **** SystemReporter Constructor ********************************** *
+ *  Description:
+ *      Builds the reporter
+ * ***************************************************************** */
+        public SimulationReporter (int startTime, int endTime) {
+            _startTime = startTime;
+            _endTime = endTime;
+            
+            CompletedJobs = new List<Job> ();
+        }
 
-			// Only print a time label if it will be relevant
-			if (time % 200 == 0 || time % 300 == 0 || time % 500 == 0) {
-				Console.WriteLine("\t--------------------------------------------------------------");
-				Console.Write ("t=" + time + ":");
-			}
-			
-			// a) Turnaround, Wait, and Processing time averages
-			if (time == _endTime) {
-				int turnaroundAccumulator = 0;
-				int waitAccumulator = 0;
-				int durationAccumulator = 0;
-				
-				foreach (Job j in CompletedJobs) {
-					turnaroundAccumulator += (j.CompletionTime - j.ArrivalTime);
-					waitAccumulator += (j.StartTime - j.ArrivalTime);
-					durationAccumulator += (j.CompletionTime - j.StartTime);
-				}
-				
-				Console.WriteLine ("\tAverage Turnaround Time:       " + turnaroundAccumulator / (float)CompletedJobs.Count);
-				Console.WriteLine ("\tAverage Wait Time:             " + waitAccumulator       / (float)CompletedJobs.Count);
-				Console.WriteLine ("\tAverage Processing Time:       " + durationAccumulator   / (float)CompletedJobs.Count);
-			}
-				
-			// b) Memory utilization in bytes
-			if (time % 500 == 0) {
-				// Convert from memory slots into "bytes"
-				Console.WriteLine ("\tUtilized Memory (in bytes):    " + memory.GetUsedMemorySlots () * 10 + "k");
-			}
-				
-			// c) Hole count and average size
-			if (time % 300 == 0) {
-				int holeCount;
-				float averageHoleSize;
-				memory.GetMemoryHoleInfo (out holeCount, out averageHoleSize);
-				
-				Console.WriteLine ("\tHole Count:                    " + holeCount);
-				Console.WriteLine ("\tAverage Hole Size:             " + averageHoleSize);
-			}
-				
-			// d) Job count and average size
-			if (time % 200 == 0) {
-				int jobCount;
-				float averageJobSize;
-				memory.GetMemoryJobInfo (out jobCount, out averageJobSize);
-				
-				Console.WriteLine ("\tJob Count:                     " + jobCount);
-				Console.WriteLine ("\tAverage Job Size:              " + averageJobSize);
-			}
-				
-			// e) Rejected job count
-			if (time % 1000 == 0) {
-				Console.WriteLine ("\tRejected Jobs (last 1000 VTU): " + RejectedJobs);
-				// Reset so we only show rejected jobs for the last 1000 VTU
-				RejectedJobs = 0;
-			}
-		}
-	}
+/* **** Report ****************************************************** *
+ *  Description:
+ *      Prints relevant statistics to standard output
+ * ***************************************************************** */
+        public void Report (
+            int time, 
+            Memory memory, 
+            Backstore backstore,
+            bool displayBackstore = false) {
+            
+            // Out of bounds check
+            if (time < _startTime || time > _endTime) {
+                return;
+            }
+            
+            // Only print a time label if it will be relevant
+            if (displayBackstore) {
+                if (time % 1000 == 0) {
+                    Console.WriteLine(new string('-', 80));
+                    Console.Write ("t=" + time + ":");
+                }
+            }
+            
+            // a) Turnaround, Wait, and Processing time averages
+            if (time == _endTime) {
+                int turnaroundAcc = 0;
+                int waitAcc = 0;
+                int durationAcc = 0;
+                int sampleCount = ((_endTime - _startTime) / 100) + 1;
+                
+                foreach (Job j in CompletedJobs) {
+                    turnaroundAcc += 
+                        (j.CompletionTime - j.ArrivalTime);
+                    waitAcc += 
+                        (j.CompletionTime - j.CpuBurst - j.ArrivalTime);
+                    durationAcc += 
+                        (j.CompletionTime - j.StartTime);
+                }
+                
+                // a)
+                Console.WriteLine ("\tAverage Turnaround Time:\t" +
+                    (turnaroundAcc / (float)CompletedJobs.Count)
+                    .ToString("n2") + " VTU");
+                Console.WriteLine ("\tAverage Wait Time:\t\t" +
+                    (waitAcc / (float)CompletedJobs.Count)
+                    .ToString("n2") + " VTU");
+                Console.WriteLine ("\tAverage Processing Time:\t" +
+                    (durationAcc / (float)CompletedJobs.Count)
+                    .ToString("n2") + " VTU");
+                
+                // b)
+                float averageUtilization =
+                    _averageUtilization / sampleCount;
+                Console.WriteLine ("\tAverage Utilized Memory:\t" +
+                    averageUtilization.ToString("n2") + 
+                    " bytes (" + 
+                    (averageUtilization / 17.50f).ToString("n2") +
+                    "%)");
+                
+                // c)
+                Console.WriteLine ("\tAverage Fragmented Memory:\t" +
+                    (_averageFragmentation / sampleCount)
+                    .ToString("n2") + " bytes");
+                
+                // d)
+                Console.WriteLine ("\tAverage Hole Size:\t\t" +
+                    (_averageHoleSize / sampleCount)
+                     .ToString("n2") + " bytes");
+            }
+                
+            // Accumulate data without displaying
+            if (time % 100 == 0) {
+                // b) Memory utilization in bytes
+                _averageUtilization +=
+                    memory.GetUsedMemorySlots () * 10;
+                
+                // c) External Memory fragmentation
+                _averageFragmentation +=
+                    (1 - (memory.GetBiggestBlock ().Size / (float)memory.Size)) * 10;
+                
+                // d) Memory hole size
+                _averageHoleSize +=
+                    memory.GetMemoryHoleSize ();
+            }
+
+            if (displayBackstore) {
+                // e) Backstore
+                if (time % 1000 == 0) {
+                    Console.WriteLine ("\tPending List:\t\t" +
+                                       "Arrive\t" +
+                                       "Size\t" +
+                                       "CPU burst");
+                    
+                    foreach (Job j in backstore.Processes) {
+                        Console.WriteLine ("\t\t\t\t" + j);
+                    }
+                }
+            }
+        }
+    }
 }
